@@ -242,6 +242,7 @@
                 </div>
 
                 <!-- Tabel Rekap Transaksi -->
+                
                 <div class="overflow-x-auto rounded-xl border border-slate-200">
                     <table class="w-full text-left border-collapse">
                         <thead>
@@ -251,11 +252,12 @@
                                 <th class="p-3">Kategori</th>
                                 <th class="p-3">Catatan</th>
                                 <th class="p-3 text-right">Jumlah</th>
+                                <th class="p-3 text-center">Aksi</th>
                             </tr>
                         </thead>
                         <tbody id="rekapTableBody" class="divide-y divide-slate-100 text-sm">
                             <tr>
-                                <td colspan="5" class="p-4 text-center text-slate-400">Tidak ada data transaksi.</td>
+                                <td colspan="6" class="p-4 text-center text-slate-400">Tidak ada data transaksi.</td>
                             </tr>
                         </tbody>
                     </table>
@@ -273,7 +275,7 @@
     <div id="transactionModal" class="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
         <div class="bg-white w-full max-w-md rounded-2xl card-shadow overflow-hidden transform transition-all animate-in fade-in zoom-in duration-200">
             <div class="flex items-center justify-between px-6 py-4 border-b border-slate-100">
-                <h3 class="font-bold text-lg text-slate-800">Tambah Transaksi Baru</h3>
+                <h3 id="modalTitle" class="font-bold text-lg text-slate-800">Tambah Transaksi Baru</h3>
                 <button onclick="closeTransactionModal()" class="text-slate-400 hover:text-slate-600 p-1 rounded-lg">
                     <i class="fa-solid fa-xmark text-lg"></i>
                 </button>
@@ -369,6 +371,23 @@
                 </div>
             </div>
         </div>
+        <!-- Modal Konfirmasi Hapus -->
+    <div id="deleteModal" class="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
+        <div class="bg-white w-full max-w-sm rounded-2xl card-shadow overflow-hidden transform transition-all animate-in fade-in zoom-in duration-200">
+            <div class="p-6 text-center space-y-4">
+                <div class="w-16 h-16 bg-rose-100 text-rose-600 rounded-full flex items-center justify-center mx-auto text-3xl mb-4">
+                    <i class="fa-solid fa-triangle-exclamation"></i>
+                </div>
+                <h3 class="font-bold text-lg text-slate-800">Hapus Transaksi?</h3>
+                <p class="text-sm text-slate-500">Tindakan ini tidak dapat dibatalkan. Data akan dihapus secara permanen dari database Anda.</p>
+                <div class="flex items-center justify-center space-x-3 pt-4">
+                    <button type="button" onclick="closeDeleteModal()" class="px-5 py-2.5 rounded-xl border border-slate-200 text-slate-600 font-medium text-sm hover:bg-slate-100 transition">Batal</button>
+                    <button type="button" onclick="confirmDelete()" id="deleteBtnConfirm" class="px-5 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-medium text-sm shadow-md transition w-32 flex justify-center items-center">
+                        <span>Hapus Data</span>
+                    </button>
+                </div>
+            </div>
+        </div>
     </div>
 
     <div id="toast" class="fixed bottom-6 left-1/2 transform -translate-x-1/2 bg-slate-900 text-white px-5 py-3 rounded-xl shadow-xl z-50 hidden text-sm font-medium transition-all duration-300">
@@ -381,11 +400,20 @@
 
     <script>
         // Global State
-        let allTransactions = [];
-        let currentTab = 'dashboard';
         let rekapMode = 'harian'; // harian, mingguan, bulanan
         let weeklyChartInstance = null;
         let monthlyChartInstance = null;
+        let editingId = null;
+        let deletingId = null;
+
+        // Normalisasi tanggal agar karakter zona waktu (T) dihiraukan
+        function normalizeDate(dateVal) {
+            if (!dateVal) return '';
+            if (typeof dateVal === 'string' && dateVal.includes('T')) {
+                return dateVal.split('T')[0]; 
+            }
+            return dateVal;
+        }
 
         // Inisialisasi saat DOM siap
         window.addEventListener('DOMContentLoaded', () => {
@@ -458,21 +486,100 @@
         }
 
         // Modal Controls
-        function openTransactionModal(tipeDefault = 'Keluar') {
-            document.getElementById('transactionModal').classList.remove('hidden');
-            
-            // Set otomatis pilihan radio Tipe berdasarkan tombol yang ditekan
-            if (tipeDefault === 'Masuk') {
-                document.querySelector('input[name="tipe"][value="Masuk"]').checked = true;
+        function openTransactionModal(tipeDefault = 'Keluar', editId = null) {
+            editingId = editId;
+            const modalTitle = document.getElementById('modalTitle');
+            const form = document.getElementById('transactionForm');
+
+            if (editingId) {
+                modalTitle.innerText = "Edit Transaksi";
+                const tx = allTransactions.find(t => t.id === editingId);
+                if (tx) {
+                    document.querySelector(`input[name="tipe"][value="${tx.tipe}"]`).checked = true;
+                    document.getElementById('inputJumlah').value = formatRupiah(tx.jumlah);
+                    document.getElementById('inputKategori').value = tx.kategori;
+                    document.getElementById('inputTanggal').value = normalizeDate(tx.tanggal);
+                    document.getElementById('inputCatatan').value = tx.catatan || '';
+                }
             } else {
-                document.querySelector('input[name="tipe"][value="Keluar"]').checked = true;
+                modalTitle.innerText = "Tambah Transaksi Baru";
+                form.reset();
+                document.getElementById('inputTanggal').valueAsDate = new Date();
+                
+                if (tipeDefault === 'Masuk') {
+                    document.querySelector('input[name="tipe"][value="Masuk"]').checked = true;
+                } else {
+                    document.querySelector('input[name="tipe"][value="Keluar"]').checked = true;
+                }
             }
+            
+            document.getElementById('transactionModal').classList.remove('hidden');
         }
+
         function closeTransactionModal() {
             document.getElementById('transactionModal').classList.add('hidden');
             document.getElementById('transactionForm').reset();
             document.getElementById('inputTanggal').valueAsDate = new Date();
+            editingId = null;
         }
+        function openDeleteModal(id) {
+            deletingId = id;
+            document.getElementById('deleteModal').classList.remove('hidden');
+        }
+
+        function closeDeleteModal() {
+            document.getElementById('deleteModal').classList.add('hidden');
+            deletingId = null;
+        }
+
+        async function confirmDelete() {
+            if (!deletingId) return;
+            
+            const deleteBtn = document.getElementById('deleteBtnConfirm');
+            deleteBtn.disabled = true;
+            deleteBtn.innerHTML = `<i class="fa-solid fa-spinner animate-spin"></i>`;
+            
+            const scriptUrl = localStorage.getItem('dompetku_script_url');
+            
+            if (!scriptUrl) {
+                allTransactions = allTransactions.filter(t => t.id !== deletingId);
+                localStorage.setItem('dompetku_local_data', JSON.stringify(allTransactions));
+                finishDeleteSuccess();
+                return;
+            }
+            
+            try {
+                const formData = new URLSearchParams();
+                formData.append('action', 'delete');
+                formData.append('id', deletingId);
+                
+                await fetch(scriptUrl, {
+                    method: 'POST',
+                    mode: 'no-cors',
+                    body: formData
+                });
+                
+                allTransactions = allTransactions.filter(t => t.id !== deletingId);
+                finishDeleteSuccess();
+                setTimeout(() => fetchData(), 1500);
+            } catch (error) {
+                console.error("Error deleting:", error);
+                showToast("Gagal hapus di cloud. Dihapus lokal.");
+                allTransactions = allTransactions.filter(t => t.id !== deletingId);
+                localStorage.setItem('dompetku_local_data', JSON.stringify(allTransactions));
+                finishDeleteSuccess();
+            }
+        }
+
+        function finishDeleteSuccess() {
+            const deleteBtn = document.getElementById('deleteBtnConfirm');
+            deleteBtn.disabled = false;
+            deleteBtn.innerHTML = `<span>Hapus Data</span>`;
+            closeDeleteModal();
+            showToast("Transaksi berhasil dihapus!");
+            processLoadedData();
+        }
+
 
         function openSettingsModal() {
             document.getElementById('settingsModal').classList.remove('hidden');
@@ -565,7 +672,8 @@
             const kategori = document.getElementById('inputKategori').value;
             const tanggal = document.getElementById('inputTanggal').value;
             const catatan = document.getElementById('inputCatatan').value;
-            const id = 'TX-' + Date.now();
+            const id = editingId ? editingId : ('TX-' + Date.now());
+            const action = editingId ? 'edit' : 'add';
             const timestamp = new Date().toISOString();
 
             const newTx = { id, tanggal, tipe, jumlah, kategori, catatan, timestamp };
@@ -573,8 +681,12 @@
             const scriptUrl = localStorage.getItem('dompetku_script_url');
 
             if (!scriptUrl) {
-                // Simpan secara lokal
-                allTransactions.unshift(newTx);
+                if (editingId) {
+                    const index = allTransactions.findIndex(t => t.id === editingId);
+                    if (index > -1) allTransactions[index] = newTx;
+                } else {
+                    allTransactions.unshift(newTx);
+                }
                 localStorage.setItem('dompetku_local_data', JSON.stringify(allTransactions));
                 finishSubmitSuccess();
                 return;
@@ -599,14 +711,23 @@
                     body: formData
                 });
 
-                // Karena mode no-cors tidak bisa membaca JSON response, kita masukkan lokal dan fetch ulang
-                allTransactions.unshift(newTx);
+                if (editingId) {
+                    const index = allTransactions.findIndex(t => t.id === editingId);
+                    if (index > -1) allTransactions[index] = newTx;
+                } else {
+                    allTransactions.unshift(newTx);
+                }
                 finishSubmitSuccess();
                 setTimeout(() => fetchData(), 1500); // Sinkronisasi ulang
             } catch (error) {
                 console.error("Error posting:", error);
-                showToast("Gagal menyimpan ke Google Sheet. Tersimpan lokal.");
-                allTransactions.unshift(newTx);
+                showToast("Gagal simpan ke cloud. Tersimpan lokal.");
+                if (editingId) {
+                    const index = allTransactions.findIndex(t => t.id === editingId);
+                    if (index > -1) allTransactions[index] = newTx;
+                } else {
+                    allTransactions.unshift(newTx);
+                }
                 localStorage.setItem('dompetku_local_data', JSON.stringify(allTransactions));
                 finishSubmitSuccess();
             }
@@ -677,12 +798,18 @@
                                 </div>
                                 <div>
                                     <h4 class="font-semibold text-sm text-slate-800">${tx.kategori}</h4>
-                                    <p class="text-xs text-slate-400">${tx.catatan || 'Tanpa catatan'} &bull; ${tx.tanggal}</p>
+                                    <p class="text-xs text-slate-400">${tx.catatan || 'Tanpa catatan'} &bull; ${normalizeDate(tx.tanggal)}</p>
                                 </div>
                             </div>
-                            <span class="font-bold text-sm ${isMasuk ? 'text-emerald-600' : 'text-slate-800'}">
-                                ${isMasuk ? '+' : '-'} ${formatRupiah(tx.jumlah)}
-                            </span>
+                            <div class="text-right">
+                                <span class="block font-bold text-sm ${isMasuk ? 'text-emerald-600' : 'text-slate-800'}">
+                                    ${isMasuk ? '+' : '-'} ${formatRupiah(tx.jumlah)}
+                                </span>
+                                <div class="mt-1 space-x-2 text-xs">
+                                    <button onclick="openTransactionModal('Edit', '${tx.id}')" class="text-slate-400 hover:text-brand-600 transition" title="Edit"><i class="fa-solid fa-pen-to-square"></i></button>
+                                    <button onclick="openDeleteModal('${tx.id}')" class="text-slate-400 hover:text-rose-600 transition" title="Hapus"><i class="fa-solid fa-trash"></i></button>
+                                </div>
+                            </div>
                         </div>
                     `;
                 }).join('');
@@ -712,8 +839,8 @@
                 let sumMasuk = 0;
                 let sumKeluar = 0;
 
-                allTransactions.forEach(tx => {
-                    if (tx.tanggal === dateString) {
+allTransactions.forEach(tx => {
+                    if (normalizeDate(tx.tanggal) === dateString) {
                         if (tx.tipe === 'Masuk') sumMasuk += Number(tx.jumlah) || 0;
                         else sumKeluar += Number(tx.jumlah) || 0;
                     }
@@ -808,18 +935,18 @@
                 if (!matchCat) return false;
 
                 if (rekapMode === 'harian') {
-                    return tx.tanggal === dateFilterVal;
+                    return normalizeDate(tx.tanggal) === dateFilterVal;
                 } else if (rekapMode === 'mingguan') {
                     // Filter 7 hari ke belakang dari tanggal yang dipilih
                     const selectedDate = new Date(dateFilterVal);
-                    const txDate = new Date(tx.tanggal);
+                    const txDate = new Date(normalizeDate(tx.tanggal));
                     const diffTime = selectedDate - txDate;
                     const diffDays = diffTime / (1000 * 60 * 60 * 24);
                     return diffDays >= 0 && diffDays <= 6;
                 } else if (rekapMode === 'bulanan') {
                     // Filter berdasarkan bulan dari tanggal hari ini atau seluruh bulan
                     const selectedDate = new Date(dateFilterVal);
-                    const txDate = new Date(tx.tanggal);
+                    const txDate = new Date(normalizeDate(tx.tanggal));
                     return txDate.getMonth() === selectedDate.getMonth() && txDate.getFullYear() === selectedDate.getFullYear();
                 }
                 return true;
@@ -847,7 +974,7 @@
                     const isMasuk = tx.tipe === 'Masuk';
                     return `
                         <tr class="hover:bg-slate-50 transition">
-                            <td class="p-3 font-medium text-slate-700">${tx.tanggal}</td>
+                            <td class="p-3 font-medium text-slate-700">${normalizeDate(tx.tanggal)}</td>
                             <td class="p-3">
                                 <span class="px-2.5 py-1 rounded-full text-xs font-semibold ${isMasuk ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'}">
                                     ${tx.tipe}
@@ -857,6 +984,14 @@
                             <td class="p-3 text-slate-500">${tx.catatan || '-'}</td>
                             <td class="p-3 text-right font-bold ${isMasuk ? 'text-emerald-600' : 'text-slate-800'}">
                                 ${isMasuk ? '+' : '-'} ${formatRupiah(tx.jumlah)}
+                            </td>
+                            <td class="p-3 text-center space-x-2">
+                                <button onclick="openTransactionModal('Edit', '${tx.id}')" class="text-slate-400 hover:text-brand-600 transition" title="Edit">
+                                    <i class="fa-solid fa-pen-to-square"></i>
+                                </button>
+                                <button onclick="openDeleteModal('${tx.id}')" class="text-slate-400 hover:text-rose-600 transition" title="Hapus">
+                                    <i class="fa-solid fa-trash"></i>
+                                </button>
                             </td>
                         </tr>
                     `;
